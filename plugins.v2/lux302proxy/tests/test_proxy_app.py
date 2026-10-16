@@ -8,8 +8,8 @@ from typing import Any
 
 from httpx import ASGITransport, AsyncClient, Request, Response
 
-from embyreverseproxy import EmbyReverseProxy
-from embyreverseproxy.proxy_app import (
+from lux302proxy import Lux302Proxy
+from lux302proxy.proxy_app import (
     _mask_media_source_paths,
     _normalize_media_source_path_prefixes,
     _restore_media_source_path,
@@ -31,7 +31,7 @@ class TestPluginConfiguration(unittest.TestCase):
         """
         验证 Lux 模式可在表单中开启且默认关闭
         """
-        form, defaults = EmbyReverseProxy().get_form()
+        form, defaults = Lux302Proxy().get_form()
         switch_models = {
             field["props"]["model"]
             for row in form
@@ -42,7 +42,11 @@ class TestPluginConfiguration(unittest.TestCase):
 
         self.assertIn("lux_web_mode", switch_models)
         self.assertFalse(defaults["lux_web_mode"])
-        self.assertEqual(EmbyReverseProxy.plugin_name, "Lux 302代理")
+        self.assertEqual(Lux302Proxy.__name__, "Lux302Proxy")
+        self.assertEqual(Lux302Proxy.plugin_name, "Lux 302代理")
+        self.assertEqual(Lux302Proxy.plugin_author, "Qoo-330ml")
+        self.assertEqual(Lux302Proxy.author_url, "https://github.com/Qoo-330ml")
+        self.assertEqual(Lux302Proxy.plugin_config_prefix, "lux302proxy_")
 
 
 class TestMediaSourcePathMasking(unittest.IsolatedAsyncioTestCase):

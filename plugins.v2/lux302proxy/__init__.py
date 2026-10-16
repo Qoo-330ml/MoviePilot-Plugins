@@ -48,9 +48,9 @@ def _parse_pin_rules(raw: str) -> List[Tuple[str, str]]:
     return result
 
 
-class EmbyReverseProxy(_PluginBase):
+class Lux302Proxy(_PluginBase):
     """
-    Emby 302 反向代理
+    Lux 网页与 Emby 302 反向代理
 
     Attributes:
         _media_source_path_prefixes_raw: 媒体源隐藏前缀原始配置
@@ -60,10 +60,10 @@ class EmbyReverseProxy(_PluginBase):
     plugin_name = "Lux 302代理"
     plugin_desc = "Lux 网页反向代理与 Emby 302 播放代理，支持外部播放器调用。"
     plugin_icon = "https://raw.githubusercontent.com/jxxghp/MoviePilot-Plugins/refs/heads/main/icons/Emby_A.png"
-    plugin_version = "0.2.6"
-    plugin_author = "DDSRem"
-    author_url = "https://github.com/DDSRem"
-    plugin_config_prefix = "embyreverseproxy_"
+    plugin_version = "0.2.7"
+    plugin_author = "Qoo-330ml"
+    author_url = "https://github.com/Qoo-330ml"
+    plugin_config_prefix = "lux302proxy_"
     plugin_order = 20
     auth_level = 1
 
@@ -134,17 +134,17 @@ class EmbyReverseProxy(_PluginBase):
                 self._thread = Thread(target=self._server.run, daemon=True)
                 self._thread.start()
                 logger.info(
-                    "EmbyReverseProxy 代理已启动: %s:%s -> %s",
+                    "Lux302Proxy 代理已启动: %s:%s -> %s",
                     self._host,
                     self._port,
                     self._emby_host,
                 )
             except Exception as e:
-                logger.error("EmbyReverseProxy 启动失败: %s", e, exc_info=True)
+                logger.error("Lux302Proxy 启动失败: %s", e, exc_info=True)
                 self._server = None
                 self._thread = None
         elif self._enabled and not self._emby_host:
-            logger.warning("EmbyReverseProxy 已启用但未配置 Emby 地址，代理未启动")
+            logger.warning("Lux302Proxy 已启用但未配置上游地址，代理未启动")
 
     def _update_config(self) -> None:
         """
@@ -173,9 +173,9 @@ class EmbyReverseProxy(_PluginBase):
                 self._server.should_exit = True
                 if self._thread is not None and self._thread.is_alive():
                     self._thread.join(timeout=5.0)
-                logger.info("EmbyReverseProxy 代理已停止")
+                logger.info("Lux302Proxy 代理已停止")
             except Exception as e:
-                logger.error("EmbyReverseProxy 停止异常: %s", e, exc_info=True)
+                logger.error("Lux302Proxy 停止异常: %s", e, exc_info=True)
             finally:
                 self._server = None
                 self._thread = None
