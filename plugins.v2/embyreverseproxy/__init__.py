@@ -57,10 +57,8 @@ class EmbyReverseProxy(_PluginBase):
         _media_source_path_prefixes: 已拆分的媒体源隐藏前缀
     """
 
-    plugin_name = "Emby 302 反向代理"
-    plugin_desc = (
-        "Emby 302 反向代理，自动代理 HTTP 链接，跳转最终地址，支持外部播放器调用。"
-    )
+    plugin_name = "Lux 302代理"
+    plugin_desc = "Lux 网页反向代理与 Emby 302 播放代理，支持外部播放器调用。"
     plugin_icon = "https://raw.githubusercontent.com/jxxghp/MoviePilot-Plugins/refs/heads/main/icons/Emby_A.png"
     plugin_version = "0.2.6"
     plugin_author = "DDSRem"

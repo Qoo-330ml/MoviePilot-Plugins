@@ -42,6 +42,7 @@ class TestPluginConfiguration(unittest.TestCase):
 
         self.assertIn("lux_web_mode", switch_models)
         self.assertFalse(defaults["lux_web_mode"])
+        self.assertEqual(EmbyReverseProxy.plugin_name, "Lux 302代理")
 
 
 class TestMediaSourcePathMasking(unittest.IsolatedAsyncioTestCase):
