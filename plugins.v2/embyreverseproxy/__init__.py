@@ -79,6 +79,7 @@ class EmbyReverseProxy(_PluginBase):
     _media_source_path_prefixes: List[str] = []
     _external_player_url = False
     _external_player_list: List[str] = []
+    _lux_web_mode = False
     _server = None
     _thread = None
 
@@ -108,6 +109,7 @@ class EmbyReverseProxy(_PluginBase):
             ]
             self._external_player_url = config.get("external_player_url", False)
             self._external_player_list = config.get("external_player_list") or []
+            self._lux_web_mode = config.get("lux_web_mode", False)
             self._update_config()
 
         self.stop_service()
@@ -121,6 +123,7 @@ class EmbyReverseProxy(_PluginBase):
                 media_source_path_prefixes=self._media_source_path_prefixes,
                 external_player_url=self._external_player_url,
                 external_player_list=self._external_player_list,
+                lux_web_mode=self._lux_web_mode,
             )
             try:
                 uv_config = Config(
@@ -159,6 +162,7 @@ class EmbyReverseProxy(_PluginBase):
                 "media_source_path_prefixes": self._media_source_path_prefixes_raw,
                 "external_player_url": self._external_player_url,
                 "external_player_list": self._external_player_list,
+                "lux_web_mode": self._lux_web_mode,
             }
         )
 
@@ -234,7 +238,7 @@ class EmbyReverseProxy(_PluginBase):
                                 "props": {
                                     "model": "enabled",
                                     "label": "启用插件",
-                                    "hint": "开启后将在独立端口运行 Emby 反向代理",
+                                    "hint": "开启后将在独立端口运行 Emby 或 Lux 反向代理",
                                     "persistent-hint": True,
                                 },
                             }
@@ -250,6 +254,24 @@ class EmbyReverseProxy(_PluginBase):
                                     "model": "external_player_url",
                                     "label": "外部播放器",
                                     "hint": "在 Emby 客户端中显示「使用外部播放器打开」按钮",
+                                    "persistent-hint": True,
+                                },
+                            }
+                        ],
+                    },
+                    {
+                        "component": "VCol",
+                        "props": {"cols": 12, "md": 4},
+                        "content": [
+                            {
+                                "component": "VSwitch",
+                                "props": {
+                                    "model": "lux_web_mode",
+                                    "label": "Lux 网页兼容模式",
+                                    "hint": (
+                                        "开启后保留 Lux 请求路径大小写、不注入 Emby 脚本；"
+                                        "目标地址填写 Lux 根地址，Emby 专用播放及播放器设置不生效"
+                                    ),
                                     "persistent-hint": True,
                                 },
                             }
@@ -288,9 +310,9 @@ class EmbyReverseProxy(_PluginBase):
                                 "component": "VTextField",
                                 "props": {
                                     "model": "emby_host",
-                                    "label": "Emby 服务器地址",
+                                    "label": "上游服务器地址",
                                     "placeholder": "http://192.168.1.100:8096",
-                                    "hint": "Emby 服务器根地址，必填",
+                                    "hint": "Emby 或 Lux 服务根地址，必填",
                                     "persistent-hint": True,
                                 },
                             }
@@ -385,4 +407,5 @@ class EmbyReverseProxy(_PluginBase):
             "media_source_path_prefixes": "",
             "external_player_url": False,
             "external_player_list": [],
+            "lux_web_mode": False,
         }

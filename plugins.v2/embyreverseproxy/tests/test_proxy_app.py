@@ -8,6 +8,7 @@ from typing import Any
 
 from httpx import ASGITransport, AsyncClient, Request, Response
 
+from embyreverseproxy import EmbyReverseProxy
 from embyreverseproxy.proxy_app import (
     _mask_media_source_paths,
     _normalize_media_source_path_prefixes,
@@ -19,6 +20,28 @@ from embyreverseproxy.proxy_app import (
 PREFIX = "http://moviepilot:3000/custom/redirect"
 OTHER_PREFIX = "https://strm.example.com/open"
 PREFIXES = _normalize_media_source_path_prefixes([PREFIX, OTHER_PREFIX])
+
+
+class TestPluginConfiguration(unittest.TestCase):
+    """
+    插件配置表单测试
+    """
+
+    def test_lux_web_mode_is_opt_in(self) -> None:
+        """
+        验证 Lux 模式可在表单中开启且默认关闭
+        """
+        form, defaults = EmbyReverseProxy().get_form()
+        switch_models = {
+            field["props"]["model"]
+            for row in form
+            for column in row.get("content", [])
+            for field in column.get("content", [])
+            if field.get("component") == "VSwitch"
+        }
+
+        self.assertIn("lux_web_mode", switch_models)
+        self.assertFalse(defaults["lux_web_mode"])
 
 
 class TestMediaSourcePathMasking(unittest.IsolatedAsyncioTestCase):
@@ -363,6 +386,187 @@ class TestMediaSourcePathMasking(unittest.IsolatedAsyncioTestCase):
         cached_sources = app.state.strm_source_cache["1"][0]
         self.assertEqual(cached_sources["source-1"], strm_url)
         self.assertEqual(cached_sources["source-2"], f"{PREFIX}/B.mp4")
+
+
+class TestLuxWebCompatibility(unittest.IsolatedAsyncioTestCase):
+    """
+    Lux 网页兼容模式测试
+    """
+
+    async def test_lux_mode_proxies_html_paths_events_and_session_cookies(self) -> None:
+        """
+        验证 Lux 模式保留路径大小写、网页、SSE 与会话 Cookie
+        """
+        app = create_app("http://lux:3000", lux_web_mode=True)
+
+        class FakeClient:
+            """
+            模拟 Lux 上游 HTTP 客户端
+            """
+
+            def __init__(self) -> None:
+                self.paths: list[str] = []
+                self.cookies: list[str | None] = []
+
+            def build_request(self, method: str, url: str, **kwargs: Any) -> Request:
+                """
+                构造并记录上游请求
+                """
+                request = Request(method, url, headers=kwargs.get("headers"))
+                self.paths.append(request.url.path)
+                self.cookies.append(request.headers.get("cookie"))
+                return request
+
+            async def send(self, request: Request, **kwargs: Any) -> Response:
+                """
+                返回模拟上游正文
+                """
+                if request.url.path == "/":
+                    content = b"<html><head></head><body>Lux</body></html>"
+                    content_type = "text/html; charset=utf-8"
+                elif request.url.path == "/api/v1/events":
+                    content = b'event: invalidate\ndata: {"scope":"home"}\n\n'
+                    content_type = "text/event-stream"
+                else:
+                    content = b"ok"
+                    content_type = "application/json"
+                return Response(
+                    200,
+                    content=content,
+                    headers={"content-type": content_type},
+                    request=request,
+                )
+
+        fake_client = FakeClient()
+        app.state.http_client_no_follow = fake_client
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://proxy") as client:
+            root = await client.get("/")
+            response = await client.get("/Users/AbC123/State.json")
+            events = await client.get("/api/v1/events")
+            session = await client.get(
+                "/api/v1/auth/session",
+                headers={"cookie": "lux_session=; lux_csrf="},
+            )
+
+        self.assertNotIn("[EmbyReverseProxy] crossOrigin", root.text)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(events.headers["content-type"], "text/event-stream")
+        self.assertEqual(session.status_code, 200)
+        self.assertEqual(
+            events.text,
+            'event: invalidate\ndata: {"scope":"home"}\n\n',
+        )
+        self.assertEqual(
+            fake_client.paths,
+            [
+                "/",
+                "/Users/AbC123/State.json",
+                "/api/v1/events",
+                "/api/v1/auth/session",
+            ],
+        )
+        self.assertEqual(fake_client.cookies[-1], "lux_session=; lux_csrf=")
+
+    async def test_lux_login_preserves_multiple_set_cookie_headers(self) -> None:
+        """
+        验证 Lux 登录的多个 Set-Cookie 响应头分别转发
+        """
+        app = create_app("http://lux:3000", lux_web_mode=True)
+
+        class FakeClient:
+            """
+            模拟返回多个 Set-Cookie 的 Lux 登录接口
+            """
+
+            def build_request(self, method: str, url: str, **kwargs: Any) -> Request:
+                """
+                构造上游请求
+                """
+                return Request(method, url, headers=kwargs.get("headers"))
+
+            async def send(self, request: Request, **kwargs: Any) -> Response:
+                """
+                返回两个独立 Cookie 响应头
+                """
+                return Response(
+                    200,
+                    json={"ok": True},
+                    headers=[
+                        ("set-cookie", "lux_session=; HttpOnly; Path=/; SameSite=Lax"),
+                        ("set-cookie", "lux_csrf=; Path=/; SameSite=Lax"),
+                    ],
+                    request=request,
+                )
+
+        app.state.http_client_no_follow = FakeClient()
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://proxy") as client:
+            response = await client.post("/api/v1/auth/login", json={})
+
+        self.assertEqual(
+            response.headers.get_list("set-cookie"),
+            [
+                "lux_session=; HttpOnly; Path=/; SameSite=Lax",
+                "lux_csrf=; Path=/; SameSite=Lax",
+            ],
+        )
+
+    async def test_default_mode_keeps_emby_html_injection(self) -> None:
+        """
+        验证未开启 Lux 模式时仍保留 Emby 页面兼容行为
+        """
+        app = create_app("http://emby:8096")
+
+        class FakeClient:
+            """
+            模拟 Emby 上游 HTTP 客户端
+            """
+
+            def __init__(self) -> None:
+                self.paths: list[str] = []
+
+            def build_request(self, method: str, url: str, **kwargs: Any) -> Request:
+                """
+                构造上游请求
+                """
+                request = Request(method, url, headers=kwargs.get("headers"))
+                self.paths.append(request.url.path)
+                return request
+
+            async def send(self, request: Request, **kwargs: Any) -> Response:
+                """
+                返回 Emby 静态资源
+                """
+                return Response(
+                    200,
+                    content=b"ok",
+                    headers={"content-type": "application/json"},
+                    request=request,
+                )
+
+            async def request(self, method: str, url: str, **kwargs: Any) -> Response:
+                """
+                返回 Emby 网页壳
+                """
+                return Response(
+                    200,
+                    text="<html><head></head><body>Emby</body></html>",
+                    headers={"content-type": "text/html; charset=utf-8"},
+                    request=Request(method, url, headers=kwargs.get("headers")),
+                )
+
+        fake_client = FakeClient()
+        app.state.http_client_no_follow = fake_client
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://proxy") as client:
+            html = await client.get("/")
+            api = await client.get("/Users/AbC123/State.json")
+
+        self.assertIn("[EmbyReverseProxy] crossOrigin", html.text)
+        self.assertEqual(api.status_code, 200)
+        self.assertEqual(fake_client.paths, ["/users/abc123/state.json"])
 
 
 if __name__ == "__main__":

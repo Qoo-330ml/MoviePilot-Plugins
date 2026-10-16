@@ -278,6 +278,7 @@ def create_app(
     media_source_path_prefixes: Optional[List[str]] = None,
     external_player_url: bool = False,
     external_player_list: List[str] | None = None,
+    lux_web_mode: bool = False,
 ) -> FastAPI:
     """
     创建 Emby 反向代理 FastAPI 应用
@@ -287,6 +288,7 @@ def create_app(
     :param media_source_path_prefixes (List): 要从媒体源展示路径中移除的 HTTP(S) URL 前缀
     :param external_player_url (bool): 是否启用外部播放器链接注入
     :param external_player_list (List): 要注入的外部播放器 key 列表；为空时使用全部
+    :param lux_web_mode (bool): 是否启用 Lux 网页兼容模式，关闭 Emby 专用请求处理
 
     :return FastAPI: 配置好的 FastAPI 应用实例
     """
@@ -331,6 +333,23 @@ def create_app(
         :return: 不包含 accept-encoding 的头字典
         """
         return {k: v for k, v in headers.items() if k.lower() != "accept-encoding"}
+
+    def _append_set_cookie_headers(
+        response: Response, upstream: HttpxResponse
+    ) -> Response:
+        """
+        将上游的每个 Set-Cookie 响应头原样附加到代理响应
+
+        :param response: 已构造的代理响应
+        :param upstream: 上游 HTTP 响应
+        :return Response: 保留全部 Set-Cookie 的代理响应
+        """
+        for name, value in upstream.headers.raw:
+            if name.lower() == b"set-cookie":
+                response.headers.append(
+                    name.decode("latin-1"), value.decode("latin-1")
+                )
+        return response
 
     def _strip_response_validators(headers: Dict[str, str]) -> Dict[str, str]:
         """
@@ -513,6 +532,9 @@ def create_app(
         """
         FastAPI 中间件：将 Emby API 路径中的大写转小写，提升路由匹配兼容性
         """
+        if lux_web_mode:
+            return await _reverse_proxy(request)
+
         path = request.scope["path"]
         lower = path.lower()
         _api_prefixes = (
@@ -870,8 +892,9 @@ def create_app(
             except Exception as e:
                 logger.debug("关闭客户端 WebSocket 时异常: %s", e)
 
-    app.websocket("/embywebsocket")(_ws_proxy)
-    app.websocket("/emby/embywebsocket")(_ws_proxy)
+    if not lux_web_mode:
+        app.websocket("/embywebsocket")(_ws_proxy)
+        app.websocket("/emby/embywebsocket")(_ws_proxy)
 
     def _current_port(request: Request) -> int:
         """
@@ -1205,7 +1228,9 @@ def create_app(
 
         excluded = HOP_BY_HOP_HEADERS | {"content-encoding", "content-length"}
         resp_headers = {
-            k: v for k, v in resp.headers.multi_items() if k.lower() not in excluded
+            k: v
+            for k, v in resp.headers.multi_items()
+            if k.lower() not in excluded | {"set-cookie"}
         }
         if out != raw and resp.status_code == 200 and "text/html" in ct:
             resp_headers["cache-control"] = "no-cache, no-store, must-revalidate"
@@ -1216,11 +1241,12 @@ def create_app(
                 if name in lk:
                     del resp_headers[lk[name]]
 
-        return Response(
+        response = Response(
             content=out,
             status_code=resp.status_code,
             headers=resp_headers,
         )
+        return _append_set_cookie_headers(response, resp)
 
     async def _reverse_proxy(
         request: Request,
@@ -1232,7 +1258,11 @@ def create_app(
         :return: 流式响应或 502 JSON 错误
         """
         path = request.scope.get("path", "/")
-        if request.method == "GET" and _may_return_emby_html_shell(path):
+        if (
+            not lux_web_mode
+            and request.method == "GET"
+            and _may_return_emby_html_shell(path)
+        ):
             return await _reverse_proxy_html_inject(request)
 
         qs = str(request.url.query)
@@ -1268,7 +1298,9 @@ def create_app(
         if resp.headers.get("content-encoding"):
             excluded = excluded | {"content-length"}
         resp_headers = {
-            k: v for k, v in resp.headers.multi_items() if k.lower() not in excluded
+            k: v
+            for k, v in resp.headers.multi_items()
+            if k.lower() not in excluded | {"set-cookie"}
         }
 
         async def stream():
@@ -1281,11 +1313,12 @@ def create_app(
             finally:
                 await resp.aclose()
 
-        return StreamingResponse(
+        response = StreamingResponse(
             stream(),
             status_code=resp.status_code,
             headers=resp_headers,
         )
+        return _append_set_cookie_headers(response, resp)
 
     def _requests_media_sources(request: Request) -> bool:
         return any(
