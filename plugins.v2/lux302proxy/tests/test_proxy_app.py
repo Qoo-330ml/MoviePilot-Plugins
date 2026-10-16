@@ -47,6 +47,10 @@ class TestPluginConfiguration(unittest.TestCase):
         self.assertEqual(Lux302Proxy.plugin_author, "Qoo-330ml")
         self.assertEqual(Lux302Proxy.author_url, "https://github.com/Qoo-330ml")
         self.assertEqual(Lux302Proxy.plugin_config_prefix, "lux302proxy_")
+        self.assertEqual(
+            Lux302Proxy.plugin_icon,
+            "https://raw.githubusercontent.com/Qoo-330ml/MoviePilot-Plugins/main/plugins.v2/lux302proxy/lux-logo.svg",
+        )
 
 
 class TestMediaSourcePathMasking(unittest.IsolatedAsyncioTestCase):

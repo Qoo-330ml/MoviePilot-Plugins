@@ -59,8 +59,8 @@ class Lux302Proxy(_PluginBase):
 
     plugin_name = "Lux 302代理"
     plugin_desc = "Lux 网页反向代理与 Emby 302 播放代理，支持外部播放器调用。"
-    plugin_icon = "https://raw.githubusercontent.com/jxxghp/MoviePilot-Plugins/refs/heads/main/icons/Emby_A.png"
-    plugin_version = "0.2.7"
+    plugin_icon = "https://raw.githubusercontent.com/Qoo-330ml/MoviePilot-Plugins/main/plugins.v2/lux302proxy/lux-logo.svg"
+    plugin_version = "0.2.8"
     plugin_author = "Qoo-330ml"
     author_url = "https://github.com/Qoo-330ml"
     plugin_config_prefix = "lux302proxy_"
